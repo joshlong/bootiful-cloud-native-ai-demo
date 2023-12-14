@@ -1,11 +1,10 @@
 package carina;
 
-import com.theokanning.openai.embedding.Embedding;
-import com.theokanning.openai.embedding.EmbeddingRequest;
-import com.theokanning.openai.embedding.EmbeddingResult;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.client.AiClient;
 import org.springframework.ai.embedding.EmbeddingClient;
+import org.springframework.ai.openai.api.OpenAiApi;
 import org.springframework.ai.reader.ExtractedTextFormatter;
 import org.springframework.ai.reader.pdf.PagePdfDocumentReader;
 import org.springframework.ai.reader.pdf.config.PdfDocumentReaderConfig;
@@ -16,75 +15,54 @@ import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.aot.hint.MemberCategory;
 import org.springframework.aot.hint.RuntimeHints;
 import org.springframework.aot.hint.RuntimeHintsRegistrar;
+import org.springframework.aot.hint.TypeReference;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.ClassPathScanningCandidateComponentProvider;
 import org.springframework.context.annotation.ImportRuntimeHints;
-import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.FileSystemResource;
-import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
+import org.springframework.core.type.filter.AnnotationTypeFilter;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.stereotype.Component;
+import org.springframework.util.Assert;
 
 import java.io.File;
-import java.io.IOException;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 @EnableConfigurationProperties(DemoProperties.class)
-@ImportRuntimeHints({ Application.KnuddelsHints.class, Application.OpenAiEmbeddingsHints.class,
-		Application.PdfReaderHints.class })
+@ImportRuntimeHints(Application.OpenAiHints.class)
 @SpringBootApplication
 public class Application {
 
-	static class KnuddelsHints implements RuntimeHintsRegistrar {
+	/**
+	 * @author Josh Long
+	 */
+	static class OpenAiHints implements RuntimeHintsRegistrar {
 
-		@Override
-		public void registerHints(RuntimeHints hints, ClassLoader classLoader) {
-			hints.resources().registerResource(new ClassPathResource("/com/knuddels/jtokkit/cl100k_base.tiktoken"));
+		private static Set<TypeReference> find(Class<?> packageClass) {
+			var packageName = packageClass.getPackageName();
+			var classPathScanningCandidateComponentProvider = new ClassPathScanningCandidateComponentProvider(false);
+			classPathScanningCandidateComponentProvider.addIncludeFilter(new AnnotationTypeFilter(JsonInclude.class));
+			return classPathScanningCandidateComponentProvider.findCandidateComponents(packageName)
+				.stream()
+				.map(bd -> TypeReference.of(Objects.requireNonNull(bd.getBeanClassName())))
+				.collect(Collectors.toUnmodifiableSet());
 		}
 
-	}
-
-	static class OpenAiEmbeddingsHints implements RuntimeHintsRegistrar {
-
 		@Override
 		public void registerHints(RuntimeHints hints, ClassLoader classLoader) {
-			var memberCategories = MemberCategory.values();
-			for (var c : new Class[] { Embedding.class, EmbeddingRequest.class, EmbeddingResult.class })
-				hints.reflection().registerType(c, memberCategories);
-
-			hints.resources()
-				.registerResource(new ClassPathResource("embedding/embedding-model-dimensions.properties"));
-		}
-
-	}
-
-	static class PdfReaderHints implements RuntimeHintsRegistrar {
-
-		@Override
-		public void registerHints(RuntimeHints hints, ClassLoader classLoader) {
-			try {
-
-				var resolver = new PathMatchingResourcePatternResolver();
-
-				var patterns = Set.of("/org/apache/pdfbox/resources/glyphlist/zapfdingbats.txt",
-						"/org/apache/pdfbox/resources/glyphlist/glyphlist.txt", "/org/apache/fontbox/cmap/**",
-						"/org/apache/pdfbox/resources/afm/**", "/org/apache/pdfbox/resources/glyphlist/**",
-						"/org/apache/pdfbox/resources/icc/**", "/org/apache/pdfbox/resources/text/**",
-						"/org/apache/pdfbox/resources/ttf/**", "/org/apache/pdfbox/resources/version.properties");
-
-				for (var pattern : patterns)
-					for (var resourceMatch : resolver.getResources(pattern))
-						hints.resources().registerResource(resourceMatch);
-
-			}
-			catch (IOException e) {
-				throw new RuntimeException(e);
-			}
-
+			var mcs = MemberCategory.values();
+			for (var tr : find(OpenAiApi.class))
+				hints.reflection().registerType(tr, mcs);
 		}
 
 	}
