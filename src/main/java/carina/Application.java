@@ -1,6 +1,5 @@
 package carina;
 
-import org.slf4j.LoggerFactory;
 import org.springframework.ai.client.AiClient;
 import org.springframework.ai.embedding.EmbeddingClient;
 import org.springframework.ai.reader.ExtractedTextFormatter;
@@ -10,19 +9,18 @@ import org.springframework.ai.retriever.VectorStoreRetriever;
 import org.springframework.ai.transformer.splitter.TokenTextSplitter;
 import org.springframework.ai.vectorstore.PgVectorStore;
 import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.builder.SpringApplicationBuilder;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.simple.JdbcClient;
 
 import java.io.File;
-import java.util.Map;
 
-@EnableConfigurationProperties(DemoProperties.class)
 @SpringBootApplication
 public class Application {
 
@@ -41,39 +39,43 @@ public class Application {
 	}
 
 	@Bean
-	ApplicationRunner demo(VectorStore vectorStore, AiAssistant assistant, JdbcClient jdbcClient,
-			DemoProperties properties) {
+	ApplicationRunner demo(VectorStore vectorStore, AiGopher assistant, JdbcClient jdbcClient,
+			@Value("${demo.file}") File demoFile) {
 		return args -> {
-			var log = LoggerFactory.getLogger(getClass());
 
-			if (properties.initializeVectorDb()) {
-				jdbcClient.sql("DELETE FROM vector_store").update();
-				for (var r : properties.documents())
-					load(vectorStore, r);
-			}
+			reset(vectorStore, jdbcClient, new FileSystemResource(demoFile));
 
-			var count = jdbcClient.sql("SELECT COUNT(*) as c FROM vector_store")
-				.query((rs, rowNum) -> rs.getInt("c"))
-				.single();
-			log.info("there are " + count + " records in the vector store");
-
-			var question = "What is Carina?";
-			var stuffedAnswer = assistant.generate(question, true);
-			var defaultAnswer = assistant.generate(question, false);
-
-			Map.of("stuffed", stuffedAnswer, "default", defaultAnswer)
-				.forEach((k, v) -> System.out.println(k + '=' + v + System.lineSeparator()));
+			var question = "who's who on carina	?";
+			var answer = assistant.chat(question);
+			System.out.println("answer: " + answer);
 
 		};
 	}
 
 	@Bean
-	AiAssistant aiAssistant(DemoProperties properties, AiClient aic, VectorStoreRetriever vectorStoreRetriever) {
-		return new AiAssistant(properties.chatbotSystemPrompt(), properties.qaSystemPrompt(), aic,
-				vectorStoreRetriever);
+	AiGopher aiAssistant(AiClient aic, VectorStoreRetriever vectorStoreRetriever) {
+
+		var qa = """
+				You're assisting with questions about services offered by Carina.
+				Carina is a two-sided healthcare marketplace focusing on home care aides (caregivers)
+				and their Medicaid in-home care clients (adults and children with developmental disabilities and low income elderly population).
+				Carina's mission is to build online tools to bring good jobs to care workers, so care workers can provide the
+				best possible care for those who need it.
+
+				Use the information from the DOCUMENTS section to provide accurate answers but act as if you knew this information innately.
+				If unsure, simply state that you don't know.
+
+				DOCUMENTS:
+				{documents}
+				""";
+
+		return new AiGopher(qa, aic, vectorStoreRetriever);
 	}
 
-	private static void load(VectorStore vectorStore, File pdfResource) {
+	private static void reset(VectorStore vectorStore, JdbcClient jdbcClient, Resource pdfResource) {
+
+		jdbcClient.sql("DELETE FROM vector_store").update();
+
 		var config = PdfDocumentReaderConfig.builder()
 			.withPageExtractedTextFormatter(new ExtractedTextFormatter.Builder().withNumberOfBottomTextLinesToDelete(3)
 				.withNumberOfTopPagesToSkipBeforeDelete(1)
@@ -81,7 +83,7 @@ public class Application {
 			.withPagesPerDocument(1)
 			.build();
 
-		var pdfReader = new PagePdfDocumentReader(new FileSystemResource(pdfResource), config);
+		var pdfReader = new PagePdfDocumentReader(pdfResource, config);
 		var textSplitter = new TokenTextSplitter();
 		vectorStore.accept(textSplitter.apply(pdfReader.get()));
 	}

@@ -6,16 +6,13 @@ spring:
     password: postgres
   ai:
     openai:
-      temperature: 0.3
+#      temperature: 0.3
       api-key: ${OPENAI_API_KEY}
-      model: gpt-3.5-turbo
-      embedding-base-url: https://api.openai.com
-      embedding-api-key: ${OPENAI_API_KEY}
-      embedding-model: text-embedding-ada-002
+#      model: gpt-3.5-turbo
+#      embedding-base-url: https://api.openai.com
+#      embedding-api-key: ${OPENAI_API_KEY}
+#      embedding-model: text-embedding-ada-002
   main:
     web-application-type: none
 demo:
-  initialize-vector-db: true
-  chatbot-system-prompt: ./prompts/system-chatbot.st
-  qa-system-prompt: ./prompts/system-qa.st
-  documents: ./data/medicaid-wa-faqs.pdf
+  file: "${HOME}/Desktop/pdfs/medicaid-wa-faqs.pdf"
